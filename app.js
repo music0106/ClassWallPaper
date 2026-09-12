@@ -10,6 +10,7 @@ import {
   addDoc,
   getDocs,
   deleteDoc,
+  updateDoc,
   doc,
   query,
   orderBy,
@@ -258,6 +259,123 @@ async function deleteMemo(id) {
 
 
 // ===================================================
+// AI 코멘트 생성 및 저장
+// 교사가 버튼을 누르면 무료 Gemini API(gemini-1.5-flash)가
+// 학생의 글에 긍정적인 응원과 피드백 코멘트를 작성합니다.
+// ===================================================
+
+// 로컬 환경(Live Server 등)에서 /api/gemini 서버리스가 없을 때 브라우저에서 직접 테스트할 수 있는 폴백 함수
+async function callGeminiDirectlyForLocal(memoText) {
+  let apiKey = localStorage.getItem("local_gemini_api_key");
+  if (!apiKey) {
+    apiKey = prompt(
+      "로컬 환경(Live Server)에서 Gemini API를 테스트하기 위해 Google AI Studio API 키를 입력해 주세요.\n(한 번 입력하면 브라우저에 저장됩니다. Vercel 배포 시에는 서버 환경변수를 자동으로 사용합니다)"
+    );
+    if (!apiKey) throw new Error("Gemini API 키가 입력되지 않았습니다.");
+    localStorage.setItem("local_gemini_api_key", apiKey.trim());
+  }
+
+  const MODEL_NAME = "gemini-1.5-flash";
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey.trim()}`;
+
+  // 개인정보 보호(AGENTS.md): uid나 이메일 등 식별 정보를 제외하고 순수 텍스트만 전달
+  const systemPrompt = "당신은 따뜻하고 학생을 깊이 격려해 주는 친절한 학교 선생님입니다. 학생이 작성한 담벼락 메모를 읽고, 긍정적인 피드백과 칭찬을 담아 다정한 어조로 1~2문장의 짧은 코멘트를 남겨주세요.";
+  const userPrompt = `학생이 쓴 글: "${memoText}"\n\n위 내용에 대해 다정하고 친절한 어조로 1~2문장의 짧은 응원/칭찬 코멘트를 작성해 주세요.`;
+
+  const response = await fetch(geminiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+      generationConfig: { temperature: 0.7, maxOutputTokens: 150 }
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    if (response.status === 400 || response.status === 403) {
+      localStorage.removeItem("local_gemini_api_key"); // 키 오류 시 재입력 유도
+    }
+    throw new Error(`Gemini API 호출 실패 (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "참 좋은 생각을 적어주었네요! 힘내요! 👍";
+}
+
+// AI 코멘트를 요청하고 Firestore에 저장하는 함수
+async function generateAIComment(memoId, memoText, btnElement) {
+  const role = getUserRole(currentUser);
+  if (role !== "teacher") {
+    alert("AI 코멘트 작성 권한이 없습니다. 교사(선생님)만 이용할 수 있습니다.");
+    return;
+  }
+
+  const originalText = btnElement ? btnElement.textContent : "";
+  if (btnElement) {
+    btnElement.disabled = true;
+    btnElement.textContent = "🤖 AI 생각 중...";
+  }
+
+  try {
+    let comment = "";
+
+    // 1. 먼저 Vercel 서버리스 함수(/api/gemini) 호출 시도
+    let useServerless = true;
+    try {
+      const res = await fetch("/api/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: memoText })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        comment = data.comment;
+      } else if (res.status === 404) {
+        // 로컬 Live Server 환경에서는 /api/gemini 경로를 찾지 못함
+        useServerless = false;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `서버 오류 (${res.status})`);
+      }
+    } catch (fetchErr) {
+      useServerless = false;
+    }
+
+    // 2. Vercel 서버리스 함수를 쓸 수 없는 로컬 환경(Live Server)인 경우 직접 호출 폴백
+    if (!useServerless) {
+      comment = await callGeminiDirectlyForLocal(memoText);
+    }
+
+    if (!comment) {
+      throw new Error("코멘트 내용을 가져오지 못했습니다.");
+    }
+
+    // 3. Firestore 메모 문서에 AI 코멘트 업데이트 (교사 권한 필요)
+    await updateDoc(doc(db, "memos", memoId), {
+      aiComment: comment,
+      aiCommentAt: Date.now()
+    });
+
+    await render();
+  } catch (error) {
+    console.error("AI 코멘트 생성 오류:", error);
+    if (error.code === "permission-denied") {
+      alert("Firestore 보안 규칙에 의해 코멘트 저장이 거부되었습니다.\nFirestore 규칙에 'allow update'가 교사에게 허용되어 있는지 확인해 주세요.");
+    } else {
+      alert("AI 코멘트 생성 중 오류가 발생했습니다:\n" + error.message);
+    }
+  } finally {
+    if (btnElement) {
+      btnElement.disabled = false;
+      btnElement.textContent = originalText;
+    }
+  }
+}
+
+
+// ===================================================
 // 화면 그리기
 // ===================================================
 
@@ -283,6 +401,7 @@ function makeMemo(memo) {
   // 학생 모드일 때는 삭제 버튼이 아예 나타나지 않습니다.
   if (isTeacher) {
     const del = document.createElement("button");
+    del.className = "del-btn";
     del.textContent = "×";
     del.title = "선생님 권한으로 삭제";
     del.style.color = "#d32f2f";
@@ -295,6 +414,7 @@ function makeMemo(memo) {
     div.appendChild(del);
   }
 
+  // 메모 본문
   const span = document.createElement("span");
   span.textContent = memo.text;
   div.appendChild(span);
@@ -308,6 +428,30 @@ function makeMemo(memo) {
     const authorRoleTag = memo.role === "teacher" ? " [선생님]" : "";
     authorSpan.textContent = `작성: ${memo.author}${authorRoleTag}`;
     div.appendChild(authorSpan);
+  }
+
+  // AI 코멘트가 있는 경우 카드 내부에 표시
+  if (memo.aiComment) {
+    const aiBox = document.createElement("div");
+    aiBox.className = "ai-comment-box";
+    aiBox.innerHTML = `
+      <div class="ai-comment-header">🤖 선생님 AI 코멘트</div>
+      <div class="ai-comment-body">${memo.aiComment}</div>
+    `;
+    div.appendChild(aiBox);
+  }
+
+  // 교사(teacher) 권한일 때만 AI 코멘트 생성/재생성 버튼 표시
+  if (isTeacher) {
+    const aiBtn = document.createElement("button");
+    aiBtn.className = "ai-comment-btn";
+    aiBtn.textContent = memo.aiComment ? "🤖 AI 코멘트 다시 달기" : "🤖 AI 코멘트 달기";
+    aiBtn.title = "Gemini 1.5 Flash AI가 학생 글에 따뜻한 응원 피드백을 남깁니다";
+    aiBtn.addEventListener("click", async function (e) {
+      e.stopPropagation();
+      await generateAIComment(memo.id, memo.text, aiBtn);
+    });
+    div.appendChild(aiBtn);
   }
 
   return div;

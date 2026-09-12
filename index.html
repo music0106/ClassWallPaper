@@ -23,9 +23,78 @@
     #writer button { vertical-align: top; height: 60px; padding: 0 16px; margin-left: 8px; font-size: 15px; cursor: pointer; }
 
     /* 메모가 붙는 담벼락 */
-    #wall { display: flex; flex-wrap: wrap; gap: 10px; }
-    .memo { border: 1px solid #ddd; background: #fffde7; padding: 10px; width: 200px; font-size: 15px; }
-    .memo button { float: right; }
+    #wall { display: flex; flex-wrap: wrap; gap: 12px; }
+    .memo { 
+      border: 1px solid #e0e0e0; 
+      background: #fffde7; 
+      padding: 12px; 
+      width: 220px; 
+      font-size: 15px; 
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .memo button.del-btn,
+    .memo > button:not(.ai-comment-btn) { 
+      float: right; 
+      background: none; 
+      border: none; 
+      font-size: 18px; 
+      font-weight: bold; 
+      cursor: pointer; 
+      padding: 0 4px;
+      line-height: 1;
+    }
+
+    /* AI 코멘트 박스 스타일 */
+    .ai-comment-box {
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: #f0f4ff;
+      border: 1px solid #c7d8ff;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .ai-comment-header {
+      font-weight: bold;
+      color: #3b5998;
+      font-size: 11px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .ai-comment-body {
+      color: #2b3a4a;
+      word-break: break-word;
+    }
+
+    /* AI 코멘트 생성 버튼 스타일 (교사 전용) */
+    .ai-comment-btn {
+      margin-top: 10px;
+      padding: 6px 10px;
+      background: #4a90e2;
+      color: #ffffff;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.2s ease;
+      width: 100%;
+      float: none !important;
+    }
+    .ai-comment-btn:hover {
+      background: #357abd;
+    }
+    .ai-comment-btn:disabled {
+      background: #b0c4de;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>

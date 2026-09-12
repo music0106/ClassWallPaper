@@ -29,6 +29,10 @@ service cloud.firestore {
       // 3. 글 삭제:
       // - 오직 교사(선생님)만 모든 글 삭제 가능 (학생은 삭제 불가)
       allow delete: if request.auth != null && isTeacher();
+
+      // 4. 글 수정 (AI 코멘트 저장 등):
+      // - 오직 교사(선생님)만 수정 가능
+      allow update: if request.auth != null && isTeacher();
     }
   }
 }
