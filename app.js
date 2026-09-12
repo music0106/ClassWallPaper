@@ -49,17 +49,19 @@ let currentUser = null;
 
 // 연수 실습: 여기에 교사(teacher)로 지정할 UID를 등록할 수 있습니다.
 export const TEACHER_UIDS = [
-  // 예: "g3X9...선생님UID"
+  "xfq1agGlssSdIyyOr5FeRJWBd6T2" // 선생님(교사)의 실제 UID
 ];
 
 // 현재 사용자의 역할을 반환합니다 ("teacher" 또는 "student")
 function getUserRole(user) {
   if (!user) return null;
-  // 1. 등록된 교사 UID 목록에 있는 경우
-  if (TEACHER_UIDS.includes(user.uid)) return "teacher";
-  // 2. 실습/테스트용 로컬 전환 모드가 설정된 경우
+  // 1. 실습/테스트용 수동 전환 모드가 설정되어 있으면 그 값 우선 (토글 버튼 테스트용)
   const savedRole = localStorage.getItem("wall_user_role");
-  if (savedRole === "teacher") return "teacher";
+  if (savedRole === "teacher" || savedRole === "student") {
+    return savedRole;
+  }
+  // 2. 등록된 교사 UID 목록에 있는 경우 기본 교사
+  if (TEACHER_UIDS.includes(user.uid)) return "teacher";
   // 3. 기본값은 학생
   return "student";
 }

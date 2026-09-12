@@ -4,23 +4,20 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // [교사 권한 판별 함수]
-    // 1. 여기에 선생님의 UID를 넣거나, 
-    // 2. 실습 테스트용으로 role이 'teacher'로 지정된 경우 교사로 판별합니다.
+    // 선생님의 실제 UID가 등록되어 교사 권한을 확인합니다.
     function isTeacher() {
-      return request.auth != null && (
-        request.auth.uid in [
-          // 복사한 내 UID를 여기에 붙여넣어 지정할 수 있습니다 (예: "aBc123XyZ...")
-        ] || (request.resource.data != null && request.resource.data.role == 'teacher')
-      );
+      return request.auth != null && request.auth.uid in [
+        "xfq1agGlssSdIyyOr5FeRJWBd6T2" // 선생님(교사)의 실제 UID
+      ];
     }
 
     match /memos/{memoId} {
       // 1. 누구나 담벼락을 읽을 수 있습니다.
       allow read: if true;
 
-      // 2. 글 생성 (작성):
-      // - 교사: 모든 글 생성 허용
-      // - 학생: 5글자 이상이며 본인의 uid로만 생성 허용
+      // 2. 글 작성 (생성):
+      // - 교사: 모든 글 작성 허용
+      // - 학생: 5글자 이상이며 본인의 uid로만 작성 허용
       allow create: if request.auth != null && (
         isTeacher() || (
           request.resource.data.text is string 
@@ -30,7 +27,7 @@ service cloud.firestore {
       );
 
       // 3. 글 삭제:
-      // - 오직 교사(선생님)만 모든 글을 삭제할 수 있습니다 (학생은 삭제 불가)
+      // - 오직 교사(선생님)만 모든 글 삭제 가능 (학생은 삭제 불가)
       allow delete: if request.auth != null && isTeacher();
     }
   }
