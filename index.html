@@ -16,6 +16,7 @@
     /* 메모 쓰는 칸 */
     #writer { margin: 16px 0; }
     #writer textarea { width: 400px; font-size: 16px; }
+    #writer button { vertical-align: top; height: 60px; padding: 0 16px; margin-left: 8px; font-size: 15px; cursor: pointer; }
 
     /* 메모가 붙는 담벼락 */
     #wall { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -32,6 +33,7 @@
 
   <div id="writer">
     <textarea id="input" rows="3" placeholder="메모를 5글자 이상 쓰고 엔터"></textarea>
+    <button id="addBtn">등록</button>
   </div>
 
   <!-- 메모는 app.js가 그립니다 -->
