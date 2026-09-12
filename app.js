@@ -94,7 +94,7 @@ async function logout() {
   }
 }
 
-// 사용자 영역 그리기 (로그인 버튼 / 사용자 정보, 역할 및 UID 표시 / 로그아웃 버튼)
+// 사용자 영역 그리기 (로그인 버튼 / 사용자 정보, 역할 및 로그아웃 버튼)
 function renderUserArea() {
   const userArea = document.getElementById("userArea");
   if (!userArea) return;
@@ -105,28 +105,31 @@ function renderUserArea() {
     const roleKorean = role === "teacher" ? "선생님 (teacher)" : "학생 (student)";
     const badgeClass = role === "teacher" ? "badge teacher" : "badge student";
 
+    // 콘솔에 UID 출력 (개발자 도구에서 확인 가능)
+    console.log(`[사용자 정보] 이름: ${currentUser.displayName}, 역할: ${role}, UID: ${currentUser.uid}`);
+
     // 1. 사용자 이름 및 역할 배지
     const infoSpan = document.createElement("span");
     infoSpan.innerHTML = `<strong>${currentUser.displayName || "로그인 사용자"}</strong>님 <span class="${badgeClass}">${roleKorean}</span>`;
     userArea.appendChild(infoSpan);
 
-    // 2. UID 확인 및 클릭 복사 태그
-    const uidSpan = document.createElement("span");
-    uidSpan.className = "uid-tag";
-    uidSpan.title = "클릭하여 UID 복사";
-    uidSpan.style.cursor = "pointer";
-    uidSpan.textContent = `UID: ${currentUser.uid} 📋`;
-    uidSpan.onclick = function () {
+    // 2. 필요할 때만 UID를 복사할 수 있는 작은 버튼
+    const copyUidBtn = document.createElement("button");
+    copyUidBtn.textContent = "UID 복사";
+    copyUidBtn.style.marginLeft = "8px";
+    copyUidBtn.style.fontSize = "12px";
+    copyUidBtn.title = "내 UID 복사하기";
+    copyUidBtn.onclick = function () {
       navigator.clipboard.writeText(currentUser.uid);
-      alert(`내 UID가 복사되었습니다!\n${currentUser.uid}\n\n이 UID를 교사 목록(TEACHER_UIDS)이나 파이어베이스 규칙에 넣을 수 있습니다.`);
+      alert(`내 UID가 복사되었습니다!\n${currentUser.uid}`);
     };
-    userArea.appendChild(uidSpan);
+    userArea.appendChild(copyUidBtn);
 
     // 3. 실습용 역할 전환(교사 <-> 학생) 토글 버튼
     const toggleRoleBtn = document.createElement("button");
-    toggleRoleBtn.textContent = role === "teacher" ? "👩‍🎓 학생 모드로 테스트" : "👨‍🏫 교사 모드로 전환";
+    toggleRoleBtn.textContent = role === "teacher" ? "👩‍🎓 학생 모드로 전환" : "👨‍🏫 교사 모드로 전환";
     toggleRoleBtn.style.marginLeft = "8px";
-    toggleRoleBtn.style.fontSize = "13px";
+    toggleRoleBtn.style.fontSize = "12px";
     toggleRoleBtn.onclick = function () {
       const nextRole = role === "teacher" ? "student" : "teacher";
       localStorage.setItem("wall_user_role", nextRole);
@@ -139,7 +142,7 @@ function renderUserArea() {
     const logoutBtn = document.createElement("button");
     logoutBtn.textContent = "로그아웃";
     logoutBtn.style.marginLeft = "8px";
-    logoutBtn.style.fontSize = "13px";
+    logoutBtn.style.fontSize = "12px";
     logoutBtn.addEventListener("click", logout);
     userArea.appendChild(logoutBtn);
   } else {
@@ -231,14 +234,20 @@ async function addMemo(text) {
 }
 
 // 메모를 지웁니다.
-// 백엔드 2: 지금은 누구든 남의 메모를 지울 수 있습니다. 이걸 막는 것이 과제입니다.
+// 오직 교사(선생님)만 삭제할 수 있습니다.
 async function deleteMemo(id) {
+  const role = getUserRole(currentUser);
+  if (role !== "teacher") {
+    alert("삭제 권한이 없습니다. 교사(선생님)만 메모를 삭제할 수 있습니다.");
+    return;
+  }
+
   try {
     await deleteDoc(doc(db, "memos", id));
   } catch (error) {
     console.error("메모 삭제 중 오류 발생:", error);
     if (error.code === "permission-denied") {
-      alert("본인이 작성한 메모만 삭제할 수 있습니다.");
+      alert("삭제 실패: Firestore 보안 규칙에 의해 삭제 권한이 거부되었습니다.");
     } else {
       alert("메모 삭제에 실패했습니다: " + error.message);
     }
@@ -267,26 +276,16 @@ function makeMemo(memo) {
 
   const role = getUserRole(currentUser);
   const isTeacher = role === "teacher";
-  const isMyMemo = currentUser && memo.uid === currentUser.uid;
-  const isLegacyMemo = !memo.uid; // 로그인 도입 전 메모
 
-  // 삭제 권한:
-  // - 교사(teacher): 모든 권한을 가집니다 (모든 메모 삭제 가능)
-  // - 학생(student): 자신이 작성한 글만 삭제 가능
-  const canDelete = isTeacher || isMyMemo || isLegacyMemo;
-
-  if (canDelete) {
+  // 삭제 권한: 오직 교사(teacher)에게만 삭제 버튼(×)이 표시됩니다.
+  // 학생 모드일 때는 삭제 버튼이 아예 나타나지 않습니다.
+  if (isTeacher) {
     const del = document.createElement("button");
     del.textContent = "×";
-    if (isTeacher && !isMyMemo) {
-      del.title = "선생님 권한으로 삭제";
-      del.style.color = "#d32f2f";
-    }
+    del.title = "선생님 권한으로 삭제";
+    del.style.color = "#d32f2f";
     del.addEventListener("click", async function () {
-      const confirmMsg = isTeacher && !isMyMemo 
-        ? "선생님 권한으로 이 메모를 삭제하시겠습니까?" 
-        : "메모를 삭제하시겠습니까?";
-      if (confirm(confirmMsg)) {
+      if (confirm("선생님 권한으로 이 메모를 삭제하시겠습니까?")) {
         await deleteMemo(memo.id);
         await render();
       }
