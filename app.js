@@ -44,6 +44,28 @@ let currentUser = null;
 
 
 // ===================================================
+// 교사 UID 목록 및 역할(Role) 판별
+// ===================================================
+
+// 연수 실습: 여기에 교사(teacher)로 지정할 UID를 등록할 수 있습니다.
+export const TEACHER_UIDS = [
+  // 예: "g3X9...선생님UID"
+];
+
+// 현재 사용자의 역할을 반환합니다 ("teacher" 또는 "student")
+function getUserRole(user) {
+  if (!user) return null;
+  // 1. 등록된 교사 UID 목록에 있는 경우
+  if (TEACHER_UIDS.includes(user.uid)) return "teacher";
+  // 2. 실습/테스트용 로컬 전환 모드가 설정된 경우
+  const savedRole = localStorage.getItem("wall_user_role");
+  if (savedRole === "teacher") return "teacher";
+  // 3. 기본값은 학생
+  return "student";
+}
+
+
+// ===================================================
 // 로그인 / 로그아웃 및 사용자 관리
 // ===================================================
 
@@ -72,19 +94,52 @@ async function logout() {
   }
 }
 
-// 사용자 영역 그리기 (로그인 버튼 / 사용자 이름 및 로그아웃 버튼)
+// 사용자 영역 그리기 (로그인 버튼 / 사용자 정보, 역할 및 UID 표시 / 로그아웃 버튼)
 function renderUserArea() {
   const userArea = document.getElementById("userArea");
   if (!userArea) return;
   userArea.innerHTML = "";
 
   if (currentUser) {
-    const info = document.createElement("span");
-    info.textContent = `${currentUser.displayName || "로그인 사용자"}님 `;
-    userArea.appendChild(info);
+    const role = getUserRole(currentUser);
+    const roleKorean = role === "teacher" ? "선생님 (teacher)" : "학생 (student)";
+    const badgeClass = role === "teacher" ? "badge teacher" : "badge student";
 
+    // 1. 사용자 이름 및 역할 배지
+    const infoSpan = document.createElement("span");
+    infoSpan.innerHTML = `<strong>${currentUser.displayName || "로그인 사용자"}</strong>님 <span class="${badgeClass}">${roleKorean}</span>`;
+    userArea.appendChild(infoSpan);
+
+    // 2. UID 확인 및 클릭 복사 태그
+    const uidSpan = document.createElement("span");
+    uidSpan.className = "uid-tag";
+    uidSpan.title = "클릭하여 UID 복사";
+    uidSpan.style.cursor = "pointer";
+    uidSpan.textContent = `UID: ${currentUser.uid} 📋`;
+    uidSpan.onclick = function () {
+      navigator.clipboard.writeText(currentUser.uid);
+      alert(`내 UID가 복사되었습니다!\n${currentUser.uid}\n\n이 UID를 교사 목록(TEACHER_UIDS)이나 파이어베이스 규칙에 넣을 수 있습니다.`);
+    };
+    userArea.appendChild(uidSpan);
+
+    // 3. 실습용 역할 전환(교사 <-> 학생) 토글 버튼
+    const toggleRoleBtn = document.createElement("button");
+    toggleRoleBtn.textContent = role === "teacher" ? "👩‍🎓 학생 모드로 테스트" : "👨‍🏫 교사 모드로 전환";
+    toggleRoleBtn.style.marginLeft = "8px";
+    toggleRoleBtn.style.fontSize = "13px";
+    toggleRoleBtn.onclick = function () {
+      const nextRole = role === "teacher" ? "student" : "teacher";
+      localStorage.setItem("wall_user_role", nextRole);
+      renderUserArea();
+      render();
+    };
+    userArea.appendChild(toggleRoleBtn);
+
+    // 4. 로그아웃 버튼
     const logoutBtn = document.createElement("button");
     logoutBtn.textContent = "로그아웃";
+    logoutBtn.style.marginLeft = "8px";
+    logoutBtn.style.fontSize = "13px";
     logoutBtn.addEventListener("click", logout);
     userArea.appendChild(logoutBtn);
   } else {
@@ -144,19 +199,22 @@ async function loadMemos() {
 
 // 메모를 새로 씁니다.
 // 5글자 이상일 때만 저장합니다.
-// 백엔드 2: 여기에 "누가 썼는지"(uid)를 함께 저장하게 됩니다.
+// 백엔드 2: 여기에 "누가 썼는지"(uid)와 역할(role)을 함께 저장하게 됩니다.
 async function addMemo(text) {
   if (text.length < 5) return;
+
+  const role = getUserRole(currentUser) || "student";
 
   const memoData = {
     text: text,
     createdAt: Date.now()
   };
 
-  // 로그인한 사용자의 uid 및 이름을 함께 저장합니다.
+  // 로그인한 사용자의 uid, 이름, 역할을 함께 저장합니다.
   if (currentUser) {
     memoData.uid = currentUser.uid;
     memoData.author = currentUser.displayName || "익명";
+    memoData.role = role;
   }
 
   try {
@@ -207,15 +265,31 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 삭제 버튼: 내가 쓴 메모이거나 작성자 정보(uid)가 없는 기존 메모인 경우에만 표시
-  const canDelete = !memo.uid || (currentUser && memo.uid === currentUser.uid);
+  const role = getUserRole(currentUser);
+  const isTeacher = role === "teacher";
+  const isMyMemo = currentUser && memo.uid === currentUser.uid;
+  const isLegacyMemo = !memo.uid; // 로그인 도입 전 메모
+
+  // 삭제 권한:
+  // - 교사(teacher): 모든 권한을 가집니다 (모든 메모 삭제 가능)
+  // - 학생(student): 자신이 작성한 글만 삭제 가능
+  const canDelete = isTeacher || isMyMemo || isLegacyMemo;
 
   if (canDelete) {
     const del = document.createElement("button");
     del.textContent = "×";
+    if (isTeacher && !isMyMemo) {
+      del.title = "선생님 권한으로 삭제";
+      del.style.color = "#d32f2f";
+    }
     del.addEventListener("click", async function () {
-      await deleteMemo(memo.id);
-      await render();
+      const confirmMsg = isTeacher && !isMyMemo 
+        ? "선생님 권한으로 이 메모를 삭제하시겠습니까?" 
+        : "메모를 삭제하시겠습니까?";
+      if (confirm(confirmMsg)) {
+        await deleteMemo(memo.id);
+        await render();
+      }
     });
     div.appendChild(del);
   }
@@ -223,6 +297,17 @@ function makeMemo(memo) {
   const span = document.createElement("span");
   span.textContent = memo.text;
   div.appendChild(span);
+
+  // 작성자 정보 및 역할 라벨 표시
+  if (memo.author) {
+    const authorSpan = document.createElement("small");
+    authorSpan.style.display = "block";
+    authorSpan.style.color = "#777";
+    authorSpan.style.marginTop = "6px";
+    const authorRoleTag = memo.role === "teacher" ? " [선생님]" : "";
+    authorSpan.textContent = `작성: ${memo.author}${authorRoleTag}`;
+    div.appendChild(authorSpan);
+  }
 
   return div;
 }

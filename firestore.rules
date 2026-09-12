@@ -2,16 +2,41 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // [교사 권한 판별 함수]
+    // 1. 여기에 선생님의 UID를 넣거나, 
+    // 2. 실습 테스트용으로 role이 'teacher'로 지정된 경우 교사로 판별합니다.
+    function isTeacher() {
+      return request.auth != null && (
+        request.auth.uid in [
+          // 복사한 내 UID를 여기에 붙여넣어 지정할 수 있습니다 (예: "aBc123XyZ...")
+        ] || (request.resource.data != null && request.resource.data.role == 'teacher')
+      );
+    }
+
     match /memos/{memoId} {
-      // 누구나 담벼락 메모를 읽을 수 있습니다.
+      // 1. 누구나 담벼락을 읽을 수 있습니다.
       allow read: if true;
 
-      // 5글자 이상인 텍스트만 새로 작성(저장)할 수 있습니다.
-      allow create: if request.resource.data.text is string 
-                    && request.resource.data.text.size() >= 5;
+      // 2. 글 생성 (작성):
+      // - 교사: 모든 글 생성 허용
+      // - 학생: 5글자 이상이며 본인의 uid로만 생성 허용
+      allow create: if request.auth != null && (
+        isTeacher() || (
+          request.resource.data.text is string 
+          && request.resource.data.text.size() >= 5
+          && request.resource.data.uid == request.auth.uid
+        )
+      );
 
-      // 삭제를 허용합니다. (본인 메모만 삭제 버튼 표시는 웹 앱에서 제어)
-      allow delete: if true;
+      // 3. 글 삭제:
+      // - 교사: 모든 글 삭제 가능 (전체 관리자 권한)
+      // - 학생: 본인이 작성한 글만 삭제 가능
+      allow delete: if request.auth != null && (
+        isTeacher() 
+        || resource.data.uid == request.auth.uid 
+        || !('uid' in resource.data)
+      );
     }
   }
 }
